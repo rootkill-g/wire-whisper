@@ -16,7 +16,7 @@ name = "whisper-server"
 path = "src/main.rs"
 
 [dependencies]
-chat-protocol = { workspace = true }
+whisper-protocol = { workspace = true }
 anyhow = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }
@@ -28,5 +28,5 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
-chat-protocol = { workspace = true }
+whisper-protocol = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

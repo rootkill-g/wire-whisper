@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# wire-whisper pre-commit hook.
+#
+# Install:
+#   git config core.hooksPath .githooks
+#
+# Enforces the README's "bonus" requirements (formatted, compiles,
+# clippy-clean) plus broken-intra-doc-link checking — the codebase has
+# enough `[`refs`]` in docstrings that a missed one is a real risk and the
+# CI-only check costs you a push to learn about. We deliberately do *not*
+# run tests here; that's CI's job. The hook must stay fast enough that
+# nobody is tempted to bypass it.
+#
+# Why no separate compile step?
+#   `cargo clippy --all-targets` already type-checks every target (lib,
+#   bins, tests, examples), so a separate `cargo check` or `cargo build`
+#   only duplicates the work clippy just did. If clippy passes, the code
+#   compiles.
+#
+# Why check the entire working tree (not just the staged subset)?
+#   Properly checking only the staged content requires stash/unstash
+#   gymnastics that can lose work when something goes wrong. For a
+#   project this size we accept the tradeoff: CI is the authoritative
+#   gate.
+#
+# Bypass (when you really, really know what you're doing):
+#   git commit --no-verify
+
+set -uo pipefail
+
+# Colours only when stdout is a tty — keeps logs and CI output clean.
+if [ -t 1 ]; then
+  R=$'\033[31m'
+  G=$'\033[32m'
+  Y=$'\033[33m'
+  C=$'\033[36m'
+  D=$'\033[2m'
+  B=$'\033[1m'
+  X=$'\033[0m'
+else
+  R=""
+  G=""
+  Y=""
+  C=""
+  D=""
+  B=""
+  X=""
+fi
+
+step() { printf "%s▸%s %s%s%s\n" "$C" "$X" "$D" "$1" "$X"; }
+
+fail() {
+  printf "\n%s%s✗ pre-commit failed:%s %s\n" "$R" "$B" "$X" "$1" >&2
+  if [ -n "${2:-}" ]; then
+    printf "%s  hint:%s %s\n" "$Y" "$X" "$2" >&2
+  fi
+  printf "%s  bypass: git commit --no-verify (use sparingly)%s\n" "$D" "$X" >&2
+  exit 1
+}
+
+step "cargo fmt --all -- --check"
+if ! cargo fmt --all -- --check; then
+  fail "code is not formatted" \
+    "run 'cargo fmt --all' and re-stage the changes"
+fi
+
+step "cargo clippy --all-targets --all-features -- -D warnings"
+if ! cargo clippy --all-targets --all-features --quiet -- -D warnings; then
+  fail "clippy found issues (lints or compile errors)" \
+    "fix the lints above; many are auto-fixable via 'cargo clippy --fix --workspace --all-targets'"
+fi
+
+step "cargo doc --no-deps (intra-doc-link check)"
+if ! RUSTDOCFLAGS="-D warnings -D rustdoc::broken-intra-doc-links" \
+  cargo doc --workspace --no-deps --quiet 2>&1; then
+  fail "cargo doc found warnings (broken [\`refs\`] in docstrings, etc.)" \
+    "rerun without --quiet to see the offending paths; rustdoc points at the exact line"
+fi
+
+printf "%s✓%s pre-commit ok\n" "$G" "$X"

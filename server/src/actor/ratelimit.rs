@@ -1,6 +1,6 @@
 //! A pure token-bucket rate limiter — the [`super::session::Session`]
 //! actor's defence against a peer that floods the room with
-//! [`ClientFrame::Send`](chat_protocol::ClientFrame::Send) requests.
+//! [`ClientFrame::Send`](whisper_protocol::ClientFrame::Send) requests.
 //!
 //! Owned exclusively by one [`super::session::Session`]: no sharing, no
 //! synchronisation. The actor model's "no shared mutable state"

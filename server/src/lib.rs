@@ -35,7 +35,7 @@
 //! - **Fan-out**: per-session bounded [`actor::Mailbox`]. Slow clients
 //!   drop frames *for themselves only*; the rest of the room is untouched.
 //! - **Encoding**: every broadcast payload is produced once via
-//!   [`chat_protocol::encode_frame`] into a [`bytes::Bytes`]; each
+//!   [`whisper_protocol::encode_frame`] into a [`bytes::Bytes`]; each
 //!   recipient clones the `Bytes` (refcount bump) and writes the same
 //!   buffer to its socket. Zero re-encoding, zero `String` clones on the
 //!   broadcast path.

@@ -19,7 +19,7 @@
 //! # The fan-out hot path
 //!
 //! [`Hub::broadcast`] takes a pre-encoded [`Bytes`] payload (produced
-//! once via [`chat_protocol::encode_frame`]) and iterates over the
+//! once via [`whisper_protocol::encode_frame`]) and iterates over the
 //! actor map, calling [`Address::try_send`] on each non-self handle.
 //! The `.clone()` on `Bytes` is a refcount bump only — *no re-encoding,
 //! no `String` clones*. The cost is one pointer compare
@@ -133,7 +133,7 @@ impl Hub {
     ///
     /// Each recipient's `Bytes` is a refcount bump on the same
     /// allocation — the publisher serialised once via
-    /// [`chat_protocol::encode_frame`]. Slow recipients see a
+    /// [`whisper_protocol::encode_frame`]. Slow recipients see a
     /// `try_send` failure and *that frame is dropped for them only*;
     /// the room is not impacted.
     pub fn broadcast(&self, origin: &Arc<str>, payload: Bytes) {

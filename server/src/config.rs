@@ -32,7 +32,7 @@ pub struct ServerConfig {
     /// cost is negligible and it keeps NAT mappings alive on idle
     /// connections.
     ///
-    /// [`Ping`]: chat_protocol::ServerFrame::Ping
+    /// [`Ping`]: whisper_protocol::ServerFrame::Ping
     pub ping_interval: Duration,
 
     /// A session is disconnected if it has not produced *any* inbound

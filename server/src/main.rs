@@ -13,7 +13,7 @@ use clap::Parser;
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 
-use whisper_server::{CancellationToken, Hub, ServerConfig, SESSION_QUEUE_DEPTH};
+use whisper_server::{CancellationToken, Hub, SESSION_QUEUE_DEPTH, ServerConfig};
 
 const BANNER: &str = r#"
     ╔══════════════════════════════════════════╗
@@ -63,7 +63,12 @@ async fn main() -> Result<()> {
 
     let hub = Hub::new();
     let shutdown = CancellationToken::new();
-    let server_task = tokio::spawn(whisper_server::serve(listener, hub, shutdown.clone(), config));
+    let server_task = tokio::spawn(whisper_server::serve(
+        listener,
+        hub,
+        shutdown.clone(),
+        config,
+    ));
 
     wait_for_signal().await;
     info!("graceful shutdown beginning; clients will be notified");
@@ -97,7 +102,7 @@ async fn main() -> Result<()> {
 /// send SIGTERM, not SIGINT). On other platforms we fall back to Ctrl-C.
 #[cfg(unix)]
 async fn wait_for_signal() {
-    use tokio::signal::unix::{signal, SignalKind};
+    use tokio::signal::unix::{SignalKind, signal};
     let mut sigterm = signal(SignalKind::terminate()).expect("install SIGTERM handler");
     let mut sigint = signal(SignalKind::interrupt()).expect("install SIGINT handler");
     tokio::select! {
@@ -122,4 +127,3 @@ fn init_tracing() {
         .expect("'info' is a valid EnvFilter directive");
     tracing_subscriber::fmt().with_env_filter(filter).init();
 }
-

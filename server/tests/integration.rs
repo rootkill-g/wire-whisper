@@ -20,13 +20,13 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use whisper_protocol::{ClientFrame, ClientSideCodec, ServerFrame, PROTOCOL_VERSION};
-use whisper_server::{serve, CancellationToken, Hub, ServerConfig};
 use futures::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tokio_util::codec::Framed;
+use whisper_protocol::{ClientFrame, ClientSideCodec, PROTOCOL_VERSION, ServerFrame};
+use whisper_server::{CancellationToken, Hub, ServerConfig, serve};
 
 type Client = Framed<TcpStream, ClientSideCodec>;
 
@@ -243,9 +243,11 @@ async fn three_way_broadcast() {
     }
 
     // bob should not see his own message.
-    assert!(timeout(Duration::from_millis(200), bob.next())
-        .await
-        .is_err());
+    assert!(
+        timeout(Duration::from_millis(200), bob.next())
+            .await
+            .is_err()
+    );
 
     server.abort();
 }
@@ -443,4 +445,3 @@ async fn rate_limit_kicks_in_past_burst() {
 
     server.abort();
 }
-g

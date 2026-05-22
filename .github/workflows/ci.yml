@@ -96,7 +96,7 @@ jobs:
       - name: Start server in background
         run: |
           set -euo pipefail
-          ./target/release/chat-server --bind 127.0.0.1:7878 > server.log 2>&1 &
+          ./target/release/whisper-server --bind 127.0.0.1:7878 > server.log 2>&1 &
           SERVER_PID=$!
           echo "$SERVER_PID" > server.pid
           echo "server pid: $SERVER_PID"
@@ -130,7 +130,7 @@ jobs:
           # then sends `leave` after 3 seconds so he exits cleanly.
           BOB_OUT=$(mktemp)
           ( ( sleep 3; printf 'leave\n' ) | \
-              timeout 10s ./target/release/chat-client \
+              timeout 10s ./target/release/whisper-client \
                 --host 127.0.0.1 --port 7878 --username bob \
                 > "$BOB_OUT" 2>&1 ) &
           BOB_PID=$!
@@ -144,7 +144,7 @@ jobs:
           ALICE_OUT=$(mktemp)
           timeout 5s bash -c '
             ( printf "send hello from alice\nleave\n"; sleep 0.3 ) \
-              | ./target/release/chat-client \
+              | ./target/release/whisper-client \
                   --host 127.0.0.1 --port 7878 --username alice \
                   2>&1
           ' > "$ALICE_OUT"

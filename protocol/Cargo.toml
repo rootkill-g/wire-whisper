@@ -1,0 +1,21 @@
+[package]
+name = "whisper-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Whisper protocol and codec for the wire-whisper app"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+bytes = { workspace = true }
+postcard = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio-util = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

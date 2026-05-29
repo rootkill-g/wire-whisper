@@ -1,0 +1,32 @@
+
+[package]
+name = "whisper-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Asynchronous single-room chat server for the wire-whisper app"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "whisper-server"
+path = "src/main.rs"
+
+[dependencies]
+whisper-protocol = { workspace = true }
+anyhow = { workspace = true }
+bytes = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+papaya = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+whisper-protocol = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

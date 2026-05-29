@@ -1,0 +1,192 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  # No `pull_request:` trigger — for same-repo PRs it would double up with
+  # `push`. External-fork PRs are not in scope for this project.
+
+# Cancel any in-flight run on the same branch when a new commit lands.
+# Saves runner minutes when pushing rapid fix-ups.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Surface backtraces on panic. Failure diagnostics jump from "thread
+  # panicked at X" to a real stack trace at zero cost when tests pass.
+  RUST_BACKTRACE: 1
+  # Note: we deliberately do NOT set `RUSTFLAGS: -D warnings` globally.
+  # That would apply to every rustc invocation, including third-party deps,
+  # and turn an unrelated future warning in a dep into a CI failure we
+  # can't fix in this repo. We enforce `-D warnings` only on the explicit
+  # clippy step below, where it applies to *our* code.
+
+jobs:
+  lint-test:
+    name: fmt / clippy / docs / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        # `clippy --all-targets` already type-checks every target (lib,
+        # bins, tests, examples), so a separate `cargo check` step would
+        # only duplicate this work. `--locked` ensures Cargo.lock is not
+        # silently mutated.
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+      - name: cargo doc (intra-doc-link check)
+        env:
+          RUSTDOCFLAGS: "-D warnings -D rustdoc::broken-intra-doc-links"
+        run: cargo doc --locked --workspace --no-deps
+
+      - name: cargo test
+        run: cargo test --locked --workspace
+
+  audit:
+    name: cargo audit (RustSec advisories)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: cargo audit
+        # Scans Cargo.lock against the RustSec advisory database.
+        # `--deny warnings` so informational notices fail the build too —
+        # tighten the screws now, loosen with `--ignore RUSTSEC-XXXX-NNNN`
+        # only when there's a specific reason a dep can't be upgraded.
+        run: cargo audit --deny warnings
+
+  smoke:
+    name: end-to-end smoke test (two-client broadcast)
+    needs: lint-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binaries
+        run: cargo build --locked --release --workspace
+
+      - name: Start server in background
+        run: |
+          set -euo pipefail
+          ./target/release/whisper-server --bind 127.0.0.1:7878 > server.log 2>&1 &
+          SERVER_PID=$!
+          echo "$SERVER_PID" > server.pid
+          echo "server pid: $SERVER_PID"
+
+          # Wait up to 5s for the listener to come up; fail fast if the
+          # server crashed during startup rather than waiting for clients
+          # to time out with a useless error.
+          ready=0
+          for _ in $(seq 1 50); do
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              echo "::error::server died during startup" >&2
+              cat server.log >&2 || true
+              exit 1
+            fi
+            if nc -z 127.0.0.1 7878 2>/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 0.1
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::server failed to listen on :7878 within 5s" >&2
+            cat server.log >&2 || true
+            exit 1
+          fi
+
+      - name: Drive two clients and verify broadcast
+        run: |
+          set -euo pipefail
+          # Bob is the *receiver*: stays connected, captures stdout+stderr,
+          # then sends `leave` after 3 seconds so he exits cleanly.
+          BOB_OUT=$(mktemp)
+          ( ( sleep 3; printf 'leave\n' ) | \
+              timeout 10s ./target/release/whisper-client \
+                --host 127.0.0.1 --port 7878 --username bob \
+                > "$BOB_OUT" 2>&1 ) &
+          BOB_PID=$!
+
+          # Let bob's handshake complete before alice connects, otherwise
+          # whichever connects later misses the other's `Joined` event
+          # (harmless for this test, but easier to reason about).
+          sleep 0.5
+
+          # Alice is the *sender*: handshakes, sends one message, leaves.
+          ALICE_OUT=$(mktemp)
+          timeout 5s bash -c '
+            ( printf "send hello from alice\nleave\n"; sleep 0.3 ) \
+              | ./target/release/whisper-client \
+                  --host 127.0.0.1 --port 7878 --username alice \
+                  2>&1
+          ' > "$ALICE_OUT"
+
+          # Wait for bob to leave on his own; reap his pid.
+          wait "$BOB_PID" 2>/dev/null || true
+
+          echo "--- alice output ---"
+          cat "$ALICE_OUT"
+          echo "--- bob output ---"
+          cat "$BOB_OUT"
+
+          # Headline assertion: bob received alice's broadcast. This
+          # actually exercises the fan-out path across two processes, not
+          # just one client's handshake.
+          if ! grep -q '<alice> hello from alice' "$BOB_OUT"; then
+            echo "::error::bob did not receive alice's broadcast" >&2
+            exit 1
+          fi
+
+          # Sanity: alice saw a Welcome.
+          if ! grep -qi 'welcome' "$ALICE_OUT"; then
+            echo "::error::alice never received Welcome from server" >&2
+            exit 1
+          fi
+
+      - name: Verify server still alive, then stop it
+        run: |
+          set -euo pipefail
+          PID=$(cat server.pid)
+          if ! kill -0 "$PID" 2>/dev/null; then
+            echo "::error::server exited unexpectedly during the test" >&2
+            cat server.log >&2 || true
+            exit 1
+          fi
+          kill "$PID"
+          wait "$PID" 2>/dev/null || true
+
+      - name: Upload server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: server-log
+          path: server.log
+          if-no-files-found: ignore
